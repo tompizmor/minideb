@@ -10,9 +10,35 @@ unstable
 latest
 "
 
+IBM_CLI_VERSION=0.6.5
+
 BASENAME=bitnami/minideb
 GCR_BASENAME=gcr.io/bitnami-containers/minideb
 QUAY_BASENAME=quay.io/bitnami/minideb
+IBM_BASENAME=registry.ng.bluemix.net/bitnami-bx-test/minideb
+
+install_ibm_cloud_cli() {
+  if ! which bx >/dev/null ; then
+    echo "Downloading ibm cloud client..."
+    if ! curl -sSLO https://public.dhe.ibm.com/cloud/bluemix/cli/bluemix-cli/${IBM_CLI_VERSION}/IBM_Cloud_CLI_${IBM_CLI_VERSION}_amd64.tar.gz; then
+      echo "Could not download bx..."
+      return 1
+    fi
+    echo "Installing bx..."
+    if ! tar -xzf IBM_Cloud_CLI_${IBM_CLI_VERSION}_amd64.tar.gz; then
+      echo "could not extract bx..."
+      return 1
+    fi
+    if ! ./Bluemix_CLI/install_bluemix_cli; then
+      echo "could not install bx..."
+      return 1
+    fi
+
+    if ! bx --version; then
+      return 1
+    fi
+  fi
+}
 
 if [ -n "${DOCKER_PASSWORD:-}" ]; then
     docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
@@ -26,8 +52,20 @@ if [ -n "${GCR_KEY:-}" ]; then
     gcloud auth activate-service-account $GCR_EMAIL --key-file <(echo "$GCR_KEY")
 fi
 
+if [ -n "${IBM_API_KEY:-}" ]; then
+    install_ibm_cloud_cli
+
+    echo "==> Installing the Container Registry plug-in...."
+    bx plugin install container-registry -r Bluemix
+    echo "==> Authenticating with IBM Cloud..."
+    bx login -a https://api.ng.bluemix.net --apikey $IBM_API_KEY
+    echo "==> Logging Docker daemon into the IBM Cloud Container Registry."
+    bx cr login
+fi
+
 for DIST in $DISTS; do
     docker push $BASENAME:$DIST
     docker push $QUAY_BASENAME:$DIST
     gcloud docker -- push $GCR_BASENAME:$DIST
+    docker push $IBM_BASENAME:$DIST
 done
